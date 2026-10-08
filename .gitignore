@@ -1,0 +1,31 @@
+# Dependencies
+/vendor/
+
+# PHPStan
+/.phpstan.cache/
+
+# PHPUnit
+/.phpunit.cache/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# PHP tools
+.php-cs-fixer.cache
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
