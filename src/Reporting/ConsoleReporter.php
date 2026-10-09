@@ -18,8 +18,12 @@ final class ConsoleReporter implements Reporter
 	 * @param list<Violation> $violations
 	 * @param array<string, string> $fileDiffs
 	 */
-	public function report(array $violations, ?OutputInterface $output = null, array $fileDiffs = [], ?string $projectRoot = null): int
-	{
+	public function report(
+		array $violations,
+		?OutputInterface $output = null,
+		array $fileDiffs = [],
+		?string $projectRoot = null,
+	): int {
 		$finalOutput = $output
 			?? $this->output
 			?? new ConsoleOutput();
@@ -34,40 +38,56 @@ final class ConsoleReporter implements Reporter
 			return Command::SUCCESS;
 		}
 
-		$count = count($violations);
+		//  Group violations by file so each file is displayed only once.
+		/** @var array<string, list<Violation>> $violationsByFile */
+		$violationsByFile = [];
+
+		foreach ($violations as $violation) {
+			$violationsByFile[$violation->file][] = $violation;
+		}
 
 		$finalOutput->writeln('');
 		$finalOutput->writeln(sprintf(
-			'<bg=red;fg=white;options=bold> FAIL </> <error>%d violation(s) found.</error>',
-			$count,
+			'<bg=red;fg=white;options=bold> FAIL </> <error>%d violation(s) found across %d file(s).</error>',
+			count($violations),
+			count($violationsByFile),
 		));
 		$finalOutput->writeln('');
 
-		foreach ($violations as $violation) {
-			$identifier = $violation->identifier !== null
-				? sprintf(
-					'<comment>[%s]</comment> ',
-					$violation->identifier,
-				)
-				: '';
+		foreach ($violationsByFile as $file => $fileViolations) {
+			$displayPath = $this->relativePath($file, $projectRoot);
 
-			$file = $this->relativePath($violation->file, $projectRoot);
-
+			// Display the file path once.
 			$finalOutput->writeln(sprintf(
-				'  <fg=cyan>%s:%d</>',
-				$file,
-				$violation->line,
+				'<fg=cyan>%s</>',
+				$displayPath,
 			));
 
-			$finalOutput->writeln(sprintf(
-				'    <fg=red>✘</> %s%s',
-				$identifier,
-				$violation->message,
-			));
+			// Display every violation belonging to this file.
+			foreach ($fileViolations as $violation) {
+				$identifier = $violation->identifier !== null
+					? sprintf('[%s]', $violation->identifier)
+					: '';
 
-			$fileDiff = $fileDiffs[$violation->file] ?? '';
+				$finalOutput->writeln(sprintf(
+					'  <fg=red>✘</> <fg=yellow>Line %d</> %s',
+					$violation->line,
+					$identifier,
+				));
+
+				$finalOutput->writeln(sprintf(
+					'      %s',
+					$violation->message,
+				));
+
+				$finalOutput->writeln('');
+			}
+
+			// Display the file diff once, after listing all violations.
+			$fileDiff = $fileDiffs[$file] ?? '';
 
 			if ($fileDiff !== '') {
+				$finalOutput->writeln('');
 				$this->writeDiff($finalOutput, $fileDiff);
 			}
 
