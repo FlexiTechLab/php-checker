@@ -6,6 +6,9 @@ namespace PhpChecker\Rules;
 
 use PhpChecker\Config\CheckerConfig;
 use PhpChecker\Rules\Documentation\RequireMethodPhpDocRule;
+use PhpChecker\Rules\TypeDeclaration\RequireParameterTypeRule;
+use PhpChecker\Rules\TypeDeclaration\RequireReturnTypeRule;
+use PhpChecker\Rules\TypeSafety\DisallowMixedTypeRule;
 
 final class RuleRegistry
 {
@@ -16,6 +19,12 @@ final class RuleRegistry
 	{
 		return [
 			'phpdoc.method' => RequireMethodPhpDocRule::class,
+
+			'typeDeclaration.parameter' => RequireParameterTypeRule::class,
+
+			'typeDeclaration.return' => RequireReturnTypeRule::class,
+
+			'typeSafety.disallowMixed' => DisallowMixedTypeRule::class,
 		];
 	}
 
