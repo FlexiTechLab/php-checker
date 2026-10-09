@@ -6,8 +6,8 @@ namespace PhpChecker;
 
 use PhpChecker\Config\CheckerConfig;
 use PhpChecker\Engine\PhpStan\PhpStanRunner;
-use PhpChecker\Reporting\ConsoleReporter;
 use PhpChecker\Rules\RuleRegistry;
+use PhpChecker\Reporting\Violation;
 
 final class PhpChecker
 {
@@ -22,7 +22,6 @@ final class PhpChecker
 	public function __construct(
 		private readonly ?PhpStanRunner $runner = null,
 		private readonly ?RuleRegistry $ruleRegistry = null,
-		private readonly ?ConsoleReporter $reporter = null,
 	) {}
 
 	public function path(string $path): self
@@ -52,7 +51,10 @@ final class PhpChecker
 		return $this;
 	}
 
-	public function run(): int
+	/**
+	 * @return list<Violation>
+	 */
+	public function run(): array
 	{
 		$config = new CheckerConfig(
 			paths: [$this->path],
@@ -61,16 +63,8 @@ final class PhpChecker
 		);
 
 		$ruleRegistry = $this->ruleRegistry ?? new RuleRegistry();
-
 		$runner = $this->runner ?? new PhpStanRunner();
 
-		$violations = $runner->run(
-			$config,
-			$ruleRegistry,
-		);
-
-		$reporter = $this->reporter ?? new ConsoleReporter();
-
-		return $reporter->report($violations);
+		return $runner->run($config, $ruleRegistry);
 	}
 }

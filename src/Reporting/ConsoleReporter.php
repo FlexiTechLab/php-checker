@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace PhpChecker\Reporting;
 
+use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Output\ConsoleOutput;
 use Symfony\Component\Console\Output\OutputInterface;
 
@@ -19,7 +20,7 @@ final class ConsoleReporter implements Reporter
 
 		if ($violations === []) {
 			$finalOutput->writeln("No violations found.");
-			return 0;
+			return Command::SUCCESS;
 		}
 
 		foreach ($violations as $violation) {
@@ -31,6 +32,6 @@ final class ConsoleReporter implements Reporter
 			$finalOutput->writeln("{$identifier}{$violation->message}");
 		}
 
-		return 1;
+		return Command::FAILURE;
 	}
 }

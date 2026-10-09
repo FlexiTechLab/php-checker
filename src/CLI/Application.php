@@ -6,6 +6,8 @@ namespace PhpChecker\CLI;
 
 use PhpChecker\CLI\Commands\CheckCommand;
 use PhpChecker\Engine\PhpStan\PhpStanRunner;
+use PhpChecker\Git\DiffMatcher;
+use PhpChecker\Git\GitClient;
 use PhpChecker\PhpChecker;
 use PhpChecker\Reporting\ConsoleReporter;
 use PhpChecker\Rules\RuleRegistry;
@@ -26,12 +28,16 @@ final class Application
 
 		$checker = new PhpChecker(
 			runner: new PhpStanRunner(),
-			ruleRegistry: new RuleRegistry(),
-			reporter: new ConsoleReporter($output),
+			ruleRegistry: new RuleRegistry()
 		);
 
 		$application->addCommand(
-			new CheckCommand($checker),
+			new CheckCommand(
+				$checker,
+				new GitClient(),
+				new DiffMatcher(),
+				new ConsoleReporter(),
+			),
 		);
 
 		return $application->run($input, $output);
