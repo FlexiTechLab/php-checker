@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace PhpChecker\CLI\Commands;
 
+use PhpChecker\Config\ConfigLoader;
 use PhpChecker\Git\DiffMatcher;
 use PhpChecker\Git\GitClient;
 use PhpChecker\PhpChecker;
 use PhpChecker\Reporting\ConsoleReporter;
+use PhpChecker\Rules\RuleRegistry;
+use PhpChecker\Support\ProjectRootResolver;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
@@ -26,6 +29,9 @@ final class CheckCommand extends Command
 		private readonly GitClient $gitClient,
 		private readonly DiffMatcher $diffMatcher,
 		private readonly ConsoleReporter $reporter,
+		private readonly ConfigLoader $configLoader,
+		private readonly ProjectRootResolver $projectRootResolver,
+		private readonly RuleRegistry $ruleRegistry,
 	) {
 		parent::__construct();
 	}
@@ -58,9 +64,43 @@ final class CheckCommand extends Command
 	{
 		$path = (string) $input->getArgument('path');
 
-		$violations = $this->checker
-			->path($path)
-			->run();
+		try {
+			$projectRoot = $this->projectRootResolver->resolve($path);
+			$config = $this->configLoader->load($projectRoot);
+
+			$unknownRules = $this->ruleRegistry->getUnknownRules(
+				$config['enabledRules'],
+			);
+
+			if ($unknownRules !== []) {
+				throw new \RuntimeException(sprintf(
+					'Unknown rule identifier(s) in %s: %s. Run "bin/php-checker rules:configure" to select valid rules.',
+					$this->configLoader->getConfigPath($projectRoot),
+					implode(', ', $unknownRules),
+				));
+			}
+		} catch (\RuntimeException $exception) {
+			$output->writeln(sprintf(
+				'<error>%s</error>',
+				$exception->getMessage(),
+			));
+
+			return Command::FAILURE;
+		}
+
+		try {
+			$violations = $this->checker
+				->path($path)
+				->useRules($config['enabledRules'])
+				->run();
+		} catch (\RuntimeException $exception) {
+			$output->writeln(sprintf(
+				'<error>%s</error>',
+				$exception->getMessage(),
+			));
+
+			return Command::FAILURE;
+		}
 
 		$showDiff = (bool) $input->getOption('show-diff');
 		$filterDiff = (bool) $input->getOption('diff');

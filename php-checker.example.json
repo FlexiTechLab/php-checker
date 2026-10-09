@@ -1,0 +1,9 @@
+{
+    "version": 1,
+    "enabledRules": [
+        "phpdoc.method",
+        "typeDeclaration.parameter",
+        "typeDeclaration.return",
+        "typeSafety.disallowMixed"
+    ]
+}

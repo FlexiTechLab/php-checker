@@ -11,6 +11,9 @@ final class CheckerConfig
 	 * @param list<string> $useRules
 	 * @param list<string> $skipRules
 	 * @param list<string> $excludePaths
+	 * @param int|null $level PHPStan built-in rule level. `null` (the
+	 *     default) runs only the configured custom rules; setting a level
+	 *     explicitly opts into PHPStan's built-in analysis as well.
 	 */
 	public function __construct(
 		private readonly array $paths = ['.'],
@@ -21,7 +24,7 @@ final class CheckerConfig
 			'node_modules',
 			'tests',
 		],
-		private readonly int $level = 8,
+		private readonly ?int $level = null,
 	) {}
 
 	/**
@@ -56,7 +59,11 @@ final class CheckerConfig
 		return $this->excludePaths;
 	}
 
-	public function getLevel(): int
+	/**
+	 * @return int|null `null` means PHPStan's built-in rules are disabled
+	 *     and only the configured custom rules run.
+	 */
+	public function getLevel(): ?int
 	{
 		return $this->level;
 	}
@@ -72,11 +79,8 @@ final class CheckerConfig
 			return false;
 		}
 
-		// Empty = use all registered rules.
-		if ($this->useRules === []) {
-			return true;
-		}
-
+		// An empty selection runs no custom rules. This lets users disable
+		// every rule from the configuration without falling back to "all".
 		return in_array($ruleId, $this->useRules, true);
 	}
 }

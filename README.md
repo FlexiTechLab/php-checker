@@ -163,14 +163,46 @@ src/Example.php:15
 [phpdoc.method] Method save() must have PHPDoc.
 ```
 
-### Enable specific rules
+### Configure enabled rules
+
+Run `rules:configure` to choose which rules the `check` command runs:
+
+```bash
+vendor/bin/php-checker rules:configure
+```
+
+The command lets you select multiple rules, separated by commas. Pressing
+enter keeps the previously selected rules, and entering `none` disables every
+rule. The selection is saved to `php-checker.json` at the project root:
+
+```json
+{
+    "version": 1,
+    "enabledRules": [
+        "phpdoc.method",
+        "typeDeclaration.return"
+    ]
+}
+```
+
+The `check` command runs **only** the rules listed in `enabledRules`; the
+list is an allowlist. PHPStan's built-in rules are not executed, so checks
+that are not explicitly enabled do not produce violations. An empty list runs
+no rules at all, which lets you disable rule checking entirely without
+deleting the configuration file.
+
+Unknown rule identifiers are rejected with a clear error message, so a typo
+cannot silently disable a rule. A missing or malformed configuration file is
+reported with a clear error message as well.
+
+### Enable specific rules programmatically
 
 Use the fluent API to select the rules to run:
 
 ```php
 use PhpChecker\PhpChecker;
+use PhpChecker\Engine\PhpStan\PhpStanRunner;
 use PhpChecker\Rules\RuleRegistry;
-use PhpChecker\Runner\PhpStanRunner;
 
 $checker = new PhpChecker(
     new PhpStanRunner(),
@@ -185,6 +217,23 @@ $violations = $checker
 
 Adjust the imports to match the classes and namespaces provided by your installed version.
 
+### Run PHPStan's built-in rules
+
+Only the configured custom rules run by default. Call `level()` to explicitly
+opt into PHPStan's built-in analysis at a given level as well:
+
+```php
+$violations = $checker
+    ->path('./src')
+    ->useRules(['typeDeclaration.parameter'])
+    ->level(8)
+    ->run();
+```
+
+When a built-in level is enabled, only the built-in counterparts of the
+enabled custom rules are suppressed, so the same problem is not reported
+twice while the rest of PHPStan's analysis is preserved.
+
 ### Skip rules
 
 You can exclude selected rules:
@@ -192,11 +241,12 @@ You can exclude selected rules:
 ```php
 $violations = $checker
     ->path('./src')
+    ->useRules(['phpdoc.method', 'typeDeclaration.return'])
     ->skipRules(['phpdoc.method'])
     ->run();
 ```
 
-When no explicit rule selection is configured, the registry determines the available rules. Rule selection and exclusion behavior is controlled by the checker configuration.
+An empty rule selection runs no custom rules. Rule selection and exclusion behavior is controlled by the checker configuration loaded from `php-checker.json`.
 
 ## Console Output
 

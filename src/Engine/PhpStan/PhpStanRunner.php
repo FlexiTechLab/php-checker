@@ -4,33 +4,202 @@ declare(strict_types=1);
 
 namespace PhpChecker\Engine\PhpStan;
 
+use JsonException;
 use PhpChecker\Config\CheckerConfig;
 use PhpChecker\Reporting\Violation;
 use PhpChecker\Rules\RuleRegistry;
+use PhpChecker\Support\ProjectRootResolver;
 use RuntimeException;
 use Symfony\Component\Process\Process;
 
 final class PhpStanRunner
 {
+	public function __construct(
+		private readonly ?ProjectRootResolver $projectRootResolver = null,
+	) {}
+
 	/**
 	 * @return list<Violation>
 	 */
 	public function run(CheckerConfig $config, RuleRegistry $ruleRegistry): array
 	{
-		$projectPath = $this->resolveProjectPath($config->getPaths()[0] ?? '.');
+		$projectRoot = $this->resolveProjectRoot($config);
 
-		$this->loadProjectAutoloader($projectPath);
+		$this->loadProjectAutoloader($projectRoot);
 
-		$configFile = $this->createTempConfig($config, $ruleRegistry, $projectPath);
+		$configFile = $this->createTempConfig($config, $ruleRegistry, $projectRoot);
 
 		try {
-			return $this->runPhpStan($projectPath, $configFile);
+			return $this->runPhpStan($projectRoot, $configFile);
 		} finally {
-			@unlink($configFile);
+			if (is_file($configFile)) {
+				@unlink($configFile);
+			}
 		}
 	}
 
-	private function resolveProjectPath(string $path): string
+	/**
+	 * Resolves the project root used for the Composer autoloader, the
+	 * PHPStan binary and relative exclude paths.
+	 */
+	private function resolveProjectRoot(CheckerConfig $config): string
+	{
+		$firstPath = trim($config->getPaths()[0] ?? '.');
+
+		if ($firstPath === '') {
+			$firstPath = '.';
+		}
+
+		$realPath = realpath($firstPath);
+
+		if ($realPath === false) {
+			throw new RuntimeException(
+				sprintf('Analysis path does not exist: %s', $firstPath),
+			);
+		}
+
+		$startDirectory = is_dir($realPath)
+			? $realPath
+			: dirname($realPath);
+
+		$resolver = $this->projectRootResolver ?? new ProjectRootResolver();
+
+		try {
+			return $resolver->resolve($startDirectory);
+		} catch (RuntimeException) {
+			// Analysis of a directory without a Composer manifest is still
+			// possible; fall back to the directory that was requested.
+			return $startDirectory;
+		}
+	}
+
+	private function loadProjectAutoloader(string $projectRoot): void
+	{
+		$autoloadPath = $projectRoot . '/vendor/autoload.php';
+
+		if (file_exists($autoloadPath)) {
+			require_once $autoloadPath;
+		}
+	}
+
+	private function createTempConfig(CheckerConfig $config, RuleRegistry $ruleRegistry, string $projectRoot): string
+	{
+		$lines = [];
+
+		$lines[] = 'parameters:';
+		// Tell PHPStan that this configuration provides its own complete
+		// ruleset. Without a `level`, only the rules registered below run;
+		// PHPStan's built-in rules stay disabled.
+		$lines[] = '    customRulesetUsed: true';
+
+		$level = $config->getLevel();
+
+		if ($level !== null) {
+			$lines[] = sprintf('    level: %d', $level);
+		}
+
+		$lines[] = '    paths:';
+
+		foreach ($config->getPaths() as $path) {
+			$lines[] = '        - ' . $this->formatNeonValue(
+				$this->resolveAnalysisPath($path),
+			);
+		}
+
+		$excludePaths = $this->resolveExcludePaths(
+			$config->getExcludePaths(),
+			$projectRoot,
+		);
+
+		if ($excludePaths !== []) {
+			$lines[] = '    excludePaths:';
+
+			foreach ($excludePaths as $path) {
+				$lines[] = '        - ' . $this->formatNeonValue($path);
+			}
+		}
+
+		// Built-in analysis only runs when a level was explicitly
+		// requested. In that mode the built-in counterparts of the enabled
+		// custom rules are suppressed so the same problem is not reported
+		// twice. Nothing else is suppressed.
+		$suppressedIdentifiers = $level === null
+			? []
+			: $ruleRegistry->getSuppressedBuiltInIdentifiers($config);
+
+		if ($suppressedIdentifiers !== []) {
+			$lines[] = '    reportUnmatchedIgnoredErrors: false';
+			$lines[] = '    ignoreErrors:';
+
+			foreach ($suppressedIdentifiers as $identifier) {
+				$lines[] = '        -';
+				$lines[] = '            identifier: ' . $this->formatNeonValue(
+					$identifier,
+				);
+			}
+		}
+
+		$enabledRules = $ruleRegistry->getEnabledRules($config);
+
+		if ($enabledRules !== []) {
+			$lines[] = '';
+			$lines[] = 'services:';
+
+			foreach ($enabledRules as $ruleClass) {
+				$lines[] = '    -';
+				$lines[] = '        class: ' . $this->formatNeonValue($ruleClass);
+				$lines[] = '        tags:';
+				$lines[] = '            - phpstan.rules.rule';
+			}
+		}
+
+		$neon = implode("\n", $lines) . "\n";
+
+		$tempFile = $this->createTempFile();
+		$configFile = $tempFile . '.neon';
+
+		if (! @rename($tempFile, $configFile)) {
+			@unlink($tempFile);
+
+			throw new RuntimeException(
+				sprintf(
+					'Unable to prepare the temporary PHPStan configuration: %s',
+					$configFile,
+				),
+			);
+		}
+
+		if (file_put_contents($configFile, $neon) === false) {
+			@unlink($configFile);
+
+			throw new RuntimeException(
+				sprintf(
+					'Unable to write the temporary PHPStan configuration: %s',
+					$configFile,
+				),
+			);
+		}
+
+		return $configFile;
+	}
+
+	private function createTempFile(): string
+	{
+		$tempFile = tempnam(
+			sys_get_temp_dir(),
+			'php-checker-phpstan-',
+		);
+
+		if ($tempFile === false) {
+			throw new RuntimeException(
+				'Unable to create a temporary file for the PHPStan configuration.',
+			);
+		}
+
+		return $tempFile;
+	}
+
+	private function resolveAnalysisPath(string $path): string
 	{
 		$path = trim($path);
 
@@ -42,89 +211,11 @@ final class PhpStanRunner
 
 		if ($realPath === false) {
 			throw new RuntimeException(
-				sprintf('Path does not exist: %s', $path)
-			);
-		}
-
-		if (!is_dir($realPath)) {
-			throw new RuntimeException(
-				sprintf('Path is not a directory: %s', $path)
+				sprintf('Analysis path does not exist: %s', $path),
 			);
 		}
 
 		return $realPath;
-	}
-
-	private function loadProjectAutoloader(string $projectPath): void
-	{
-		$autoloadPath = $projectPath . '/vendor/autoload.php';
-
-		if (file_exists($autoloadPath)) {
-			require_once $autoloadPath;
-		}
-	}
-
-	private function createTempConfig(CheckerConfig $config, RuleRegistry $ruleRegistry, string $projectPath): string
-	{
-		$neon = "parameters:\n";
-
-		$neon .= sprintf(
-			"    level: %d\n",
-			$config->getLevel(),
-		);
-
-		$neon .= "    paths:\n";
-
-		foreach ($config->getPaths() as $path) {
-			$absolutePath = $this->resolvePath($projectPath, $path);
-
-			if (!file_exists($absolutePath)) {
-				throw new RuntimeException(
-					sprintf(
-						'Analysis path does not exist: %s',
-						$absolutePath,
-					),
-				);
-			}
-
-			$neon .= "        - {$absolutePath}\n";
-		}
-
-		$excludePaths = $this->resolveExcludePaths($config->getExcludePaths(), $projectPath);
-
-		if ($excludePaths !== []) {
-			$neon .= "\n    excludePaths:\n";
-
-			foreach ($excludePaths as $path) {
-				$neon .= "        - {$path}\n";
-			}
-		}
-
-		$neon .= "\nservices:\n";
-
-		foreach ($ruleRegistry->all() as $ruleId => $ruleClass) {
-			if (!$config->shouldUseRule($ruleId)) {
-				continue;
-			}
-
-			$neon .= "    -\n";
-			$neon .= "        class: {$ruleClass}\n";
-			$neon .= "        tags:\n";
-			$neon .= "            - phpstan.rules.rule\n";
-		}
-
-		$tmpFile = sys_get_temp_dir()
-			. '/php-checker-phpstan-'
-			. bin2hex(random_bytes(8))
-			. '.neon';
-
-		if (file_put_contents($tmpFile, $neon) === false) {
-			throw new RuntimeException(
-				'Unable to create temporary PHPStan configuration.',
-			);
-		}
-
-		return $tmpFile;
 	}
 
 	/**
@@ -132,19 +223,14 @@ final class PhpStanRunner
 	 *
 	 * @return list<string>
 	 */
-	private function resolveExcludePaths(
-		array $paths,
-		string $projectPath,
-	): array {
+	private function resolveExcludePaths(array $paths, string $projectRoot): array
+	{
 		$excludePaths = [];
 
 		foreach ($paths as $path) {
-			$absolutePath = $this->resolvePath(
-				$projectPath,
-				$path,
-			);
+			$absolutePath = $this->resolvePath($projectRoot, $path);
 
-			if (!is_dir($absolutePath)) {
+			if (! is_dir($absolutePath)) {
 				continue;
 			}
 
@@ -154,23 +240,39 @@ final class PhpStanRunner
 		return $excludePaths;
 	}
 
-	private function resolvePath(string $projectPath, string $path): string
+	private function resolvePath(string $projectRoot, string $path): string
 	{
 		if (str_starts_with($path, '/')) {
 			return $path;
 		}
 
-		return rtrim($projectPath, '/')
+		return rtrim($projectRoot, '/')
 			. '/'
 			. ltrim($path, '/');
+	}
+
+	private function formatNeonValue(string $value): string
+	{
+		if (
+			$value !== ''
+			&& preg_match('/^[A-Za-z0-9_.\/\\\\:-]+$/', $value) === 1
+		) {
+			return $value;
+		}
+
+		return "'" . str_replace(
+			['\\', "'"],
+			['\\\\', "\\'"],
+			$value,
+		) . "'";
 	}
 
 	/**
 	 * @return list<Violation>
 	 */
-	private function runPhpStan(string $projectPath, string $configFile): array
+	private function runPhpStan(string $projectRoot, string $configFile): array
 	{
-		$phpStanBin = $this->findPhpStanBinary();
+		$phpStanBin = $this->findPhpStanBinary($projectRoot);
 
 		$process = new Process(
 			[
@@ -180,31 +282,50 @@ final class PhpStanRunner
 				'--error-format=json',
 				'--no-progress',
 			],
-			$projectPath,
+			$projectRoot,
 		);
 
 		$process->run();
 
 		$exitCode = $process->getExitCode();
 
-		if ($exitCode > 1) {
+		if ($exitCode === null) {
 			throw new RuntimeException(
-				'PHPStan analysis failed: '
-					. $process->getErrorOutput()
+				'PHPStan did not terminate correctly.',
+			);
+		}
+
+		if ($exitCode > 1) {
+			$error = trim($process->getErrorOutput());
+
+			if ($error === '') {
+				$error = trim($process->getOutput());
+			}
+
+			throw new RuntimeException(
+				sprintf(
+					'PHPStan analysis failed (exit code %d): %s',
+					$exitCode,
+					$error,
+				),
 			);
 		}
 
 		return $this->parseJsonOutput($process->getOutput());
 	}
 
-	private function findPhpStanBinary(): string
+	private function findPhpStanBinary(string $projectRoot): string
 	{
-		$projectRoot = dirname(__DIR__, 3);
+		$candidates = array_unique([
+			$projectRoot . '/vendor/bin/phpstan',
+			(getcwd() ?: '.') . '/vendor/bin/phpstan',
+			dirname(__DIR__, 3) . '/vendor/bin/phpstan',
+		]);
 
-		$localBinary = $projectRoot . '/vendor/bin/phpstan';
-
-		if (file_exists($localBinary)) {
-			return $localBinary;
+		foreach ($candidates as $candidate) {
+			if (is_file($candidate)) {
+				return $candidate;
+			}
 		}
 
 		$process = new Process(['which', 'phpstan']);
@@ -220,8 +341,8 @@ final class PhpStanRunner
 		}
 
 		throw new RuntimeException(
-			'PHPStan binary not found. '
-				. 'Please install PHPStan in the project.'
+			'PHPStan binary not found. Install PHPStan in the project '
+				. '(vendor/bin/phpstan) or make "phpstan" available on the PATH.',
 		);
 	}
 
@@ -234,11 +355,28 @@ final class PhpStanRunner
 			return [];
 		}
 
-		$data = json_decode(
-			$output,
-			true,
-			flags: JSON_THROW_ON_ERROR,
-		);
+		try {
+			$data = json_decode(
+				$output,
+				true,
+				512,
+				JSON_THROW_ON_ERROR,
+			);
+		} catch (JsonException $exception) {
+			throw new RuntimeException(
+				sprintf(
+					'Unable to parse PHPStan JSON output: %s',
+					$exception->getMessage(),
+				),
+				previous: $exception,
+			);
+		}
+
+		if (! is_array($data)) {
+			throw new RuntimeException(
+				'Unexpected PHPStan output: expected a JSON object.',
+			);
+		}
 
 		$violations = [];
 

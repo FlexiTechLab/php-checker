@@ -19,6 +19,12 @@ final class PhpChecker
 	/** @var list<string> */
 	private array $skipRules = [];
 
+	/**
+	 * PHPStan built-in rule level. `null` means only the configured custom
+	 * rules run; a non-null value opts into PHPStan's built-in analysis too.
+	 */
+	private ?int $level = null;
+
 	public function __construct(
 		private readonly ?PhpStanRunner $runner = null,
 		private readonly ?RuleRegistry $ruleRegistry = null,
@@ -52,6 +58,17 @@ final class PhpChecker
 	}
 
 	/**
+	 * Explicitly opt into PHPStan's built-in analysis at the given level.
+	 * Without this call only the configured custom rules are executed.
+	 */
+	public function level(int $level): self
+	{
+		$this->level = $level;
+
+		return $this;
+	}
+
+	/**
 	 * @return list<Violation>
 	 */
 	public function run(): array
@@ -60,6 +77,7 @@ final class PhpChecker
 			paths: [$this->path],
 			useRules: $this->useRules,
 			skipRules: $this->skipRules,
+			level: $this->level,
 		);
 
 		$ruleRegistry = $this->ruleRegistry ?? new RuleRegistry();
