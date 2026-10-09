@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace PhpChecker\CLI\Prompt;
 
+use PhpChecker\Support\TextWrapper;
 use Symfony\Component\Console\Output\OutputInterface;
+use Symfony\Component\Console\Terminal;
 
 /**
  * Holds the state of an interactive checkbox list and renders it.
@@ -14,11 +16,13 @@ use Symfony\Component\Console\Output\OutputInterface;
  */
 final class CheckboxList
 {
+	private const DEFAULT_WIDTH = 80;
+
+	/** @var list<CheckboxItem> */
+	private array $items = [];
+
 	/** @var list<string> */
 	private array $identifiers = [];
-
-	/** @var array<string, string> */
-	private array $labels = [];
 
 	/** @var array<string, bool> */
 	private array $selected = [];
@@ -29,20 +33,32 @@ final class CheckboxList
 
 	private bool $aborted = false;
 
+	private int $width;
+
 	/**
-	 * @param array<string, string> $items    Identifier => label.
-	 * @param list<string>          $selected Identifiers selected by default.
+	 * @param list<CheckboxItem> $items
+	 * @param list<string>       $selected Identifiers selected by default.
 	 */
 	public function __construct(
 		array $items,
 		array $selected,
 		private readonly OutputInterface $output,
+		?int $width = null,
 	) {
-		foreach ($items as $identifier => $label) {
-			$this->identifiers[] = $identifier;
-			$this->labels[$identifier] = $label;
-			$this->selected[$identifier] = \in_array($identifier, $selected, true);
+		$this->width = $width ?? self::detectWidth();
+
+		foreach ($items as $item) {
+			$this->items[] = $item;
+			$this->identifiers[] = $item->identifier;
+			$this->selected[$item->identifier] = \in_array($item->identifier, $selected, true);
 		}
+	}
+
+	private static function detectWidth(): int
+	{
+		$width = (new Terminal())->getWidth();
+
+		return $width > 0 ? $width : self::DEFAULT_WIDTH;
 	}
 
 	/**
@@ -152,31 +168,71 @@ final class CheckboxList
 	 */
 	public function render(bool $initial = false): void
 	{
+		$lines = $this->lines();
+
 		if (! $initial && $this->renderedLines > 0) {
 			$this->output->write(sprintf("\x1b[%dA", $this->renderedLines));
 		}
 
-		$lines = 0;
-
-		foreach ($this->identifiers as $index => $identifier) {
+		foreach ($lines as $line) {
 			$this->output->write("\x1b[2K");
-			$this->output->writeln($this->formatLine($index, $identifier));
-			++$lines;
+			$this->output->writeln($line);
 		}
 
-		$this->renderedLines = $lines;
+		$this->renderedLines = \count($lines);
 	}
 
-	private function formatLine(int $index, string $identifier): string
+	/**
+	 * @return list<string>
+	 */
+	private function lines(): array
 	{
-		$pointer = $index === $this->cursor ? '>' : ' ';
-		$mark = $this->selected[$identifier] ? '[x]' : '[ ]';
-		$label = $this->labels[$identifier];
+		$lines = [];
 
-		if ($index === $this->cursor) {
-			return sprintf('<info>%s %s %s</info>', $pointer, $mark, $label);
+		foreach ($this->items as $index => $item) {
+			if ($index > 0) {
+				$lines[] = '';
+			}
+
+			foreach ($this->formatItem($item, $index === $this->cursor) as $line) {
+				$lines[] = $line;
+			}
 		}
 
-		return sprintf('%s %s %s', $pointer, $mark, $label);
+		return $lines;
+	}
+
+	/**
+	 * @return list<string>
+	 */
+	private function formatItem(CheckboxItem $item, bool $isCursor): array
+	{
+		$head = ($isCursor ? '> ' : '  ')
+			. ($this->selected[$item->identifier] ? '[x] ' : '[ ] ');
+
+		$headWidth = \strlen($head);
+		$title = sprintf('%s (%s)', $item->name, $item->identifier);
+		$lines = [];
+
+		foreach (TextWrapper::wrap($title, $this->width - $headWidth) as $titleLine) {
+			$lines[] = ($lines === [] ? $head : str_repeat(' ', $headWidth)) . $titleLine;
+		}
+
+		if ($item->description !== '') {
+			$indent = str_repeat(' ', $headWidth);
+
+			foreach (TextWrapper::wrap($item->description, $this->width - $headWidth) as $descriptionLine) {
+				$lines[] = $indent . $descriptionLine;
+			}
+		}
+
+		if ($isCursor) {
+			return array_map(
+				static fn (string $line): string => sprintf('<info>%s</info>', $line),
+				$lines,
+			);
+		}
+
+		return $lines;
 	}
 }

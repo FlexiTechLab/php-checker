@@ -13,19 +13,73 @@ use PhpChecker\Rules\TypeSafety\DisallowMixedTypeRule;
 final class RuleRegistry
 {
 	/**
+	 * Single source of truth for the registered rules: their stable
+	 * identifier, implementation class and human-readable metadata.
+	 *
+	 * @return array<string, array{class: class-string, name: string, description: string}>
+	 */
+	private function definitions(): array
+	{
+		return [
+			'phpdoc.method' => [
+				'class' => RequireMethodPhpDocRule::class,
+				'name' => 'Require Method PHPDoc',
+				'description' => 'Requires PHPDoc documentation for methods to improve code readability and document intent.',
+			],
+
+			'typeDeclaration.parameter' => [
+				'class' => RequireParameterTypeRule::class,
+				'name' => 'Require Parameter Types',
+				'description' => 'Requires explicit types for method and function parameters to improve type safety and code clarity.',
+			],
+
+			'typeDeclaration.return' => [
+				'class' => RequireReturnTypeRule::class,
+				'name' => 'Require Return Types',
+				'description' => 'Requires explicit return types for methods and functions to make expected results clear and prevent type-related errors.',
+			],
+
+			'typeSafety.disallowMixed' => [
+				'class' => DisallowMixedTypeRule::class,
+				'name' => 'Disallow Mixed Types',
+				'description' => 'Flags the use of `mixed` types to encourage more specific types and stronger static analysis.',
+			],
+		];
+	}
+
+	/**
 	 * @return array<string, class-string>
 	 */
 	public function all(): array
 	{
-		return [
-			'phpdoc.method' => RequireMethodPhpDocRule::class,
+		$rules = [];
 
-			'typeDeclaration.parameter' => RequireParameterTypeRule::class,
+		foreach ($this->definitions() as $identifier => $definition) {
+			$rules[$identifier] = $definition['class'];
+		}
 
-			'typeDeclaration.return' => RequireReturnTypeRule::class,
+		return $rules;
+	}
 
-			'typeSafety.disallowMixed' => DisallowMixedTypeRule::class,
-		];
+	/**
+	 * Human-readable metadata for every registered rule, keyed by the same
+	 * identifiers as {@see all()}.
+	 *
+	 * @return array<string, RuleMetadata>
+	 */
+	public function getMetadata(): array
+	{
+		$metadata = [];
+
+		foreach ($this->definitions() as $identifier => $definition) {
+			$metadata[$identifier] = new RuleMetadata(
+				$identifier,
+				$definition['name'],
+				$definition['description'],
+			);
+		}
+
+		return $metadata;
 	}
 
 	/**

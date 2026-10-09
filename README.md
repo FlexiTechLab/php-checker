@@ -172,16 +172,29 @@ vendor/bin/php-checker rules:configure
 ```
 
 On a real terminal the command shows an interactive checklist of every
-registered rule. Use the arrow keys (or `k`/`j`) to move, space to toggle the
-highlighted rule, `a` to toggle all rules, and enter to save. Press `q` or
-Escape to cancel without changing anything. Rules that are already enabled are
-shown pre-selected.
+registered rule. Each entry shows a human-readable name, a short description
+of what the rule checks, and the stable identifier in parentheses:
+
+```text
+> [x] Require Method PHPDoc (phpdoc.method)
+      Requires PHPDoc documentation for methods to improve code readability and
+      document intent.
+
+  [ ] Disallow Mixed Types (typeSafety.disallowMixed)
+      Flags the use of `mixed` types to encourage more specific types and
+      stronger static analysis.
+```
+
+Use the arrow keys (or `k`/`j`) to move, space to toggle the highlighted rule,
+`a` to toggle all rules, and enter to save. Press `q` or Escape to cancel
+without changing anything. Rules that are already enabled are shown
+pre-selected. Long names and descriptions wrap to the terminal width.
 
 When the terminal does not support interactive input (for example when the
 command runs from a script, with `--no-interaction`, or on a platform without
-`stty`), the command falls back to entering multiple rule identifiers
-separated by commas. Pressing enter keeps the previously selected rules, and
-entering `none` disables every rule.
+`stty`), the command lists the same names and descriptions and falls back to
+entering multiple rule identifiers separated by commas. Pressing enter keeps
+the previously selected rules, and entering `none` disables every rule.
 
 The selection is saved to `php-checker.json` at the project root:
 

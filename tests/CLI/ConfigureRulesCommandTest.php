@@ -157,11 +157,28 @@ final class ConfigureRulesCommandTest extends TestCase
 			'Enter multiple choices separated by commas.',
 			$display,
 		);
-		$this->assertStringNotContainsString(
-			'Use the arrow keys to move',
+		// The interactive checklist must not be used without a TTY.
+		$this->assertStringNotContainsString('Use ↑/↓ to navigate', $display);
+		$this->assertSame(['phpdoc.method'], $this->enabledRules());
+	}
+
+	public function testFallbackListsHumanReadableRuleNames(): void
+	{
+		$tester = new CommandTester($this->createCommand());
+		$tester->setInputs(['phpdoc.method']);
+
+		$tester->execute([], ['interactive' => true]);
+
+		$display = $tester->getDisplay();
+
+		$this->assertStringContainsString(
+			'Require Method PHPDoc (phpdoc.method)',
 			$display,
 		);
-		$this->assertSame(['phpdoc.method'], $this->enabledRules());
+		$this->assertStringContainsString(
+			'Disallow Mixed Types (typeSafety.disallowMixed)',
+			$display,
+		);
 	}
 
 	public function testNonInteractiveEnvironmentKeepsCurrentSelection(): void

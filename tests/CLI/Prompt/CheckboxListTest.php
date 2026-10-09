@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace PhpChecker\Tests\CLI\Prompt;
 
+use PhpChecker\CLI\Prompt\CheckboxItem;
 use PhpChecker\CLI\Prompt\CheckboxList;
 use PhpChecker\CLI\Prompt\Key;
 use PHPUnit\Framework\TestCase;
@@ -12,26 +13,42 @@ use Symfony\Component\Console\Output\BufferedOutput;
 final class CheckboxListTest extends TestCase
 {
 	/**
-	 * @return array<string, string>
+	 * @return list<CheckboxItem>
 	 */
 	private function items(): array
 	{
 		return [
-			'phpdoc.method' => 'phpdoc.method',
-			'typeDeclaration.parameter' => 'typeDeclaration.parameter',
-			'typeDeclaration.return' => 'typeDeclaration.return',
+			new CheckboxItem(
+				'phpdoc.method',
+				'Require Method PHPDoc',
+				'Requires PHPDoc documentation for methods.',
+			),
+			new CheckboxItem(
+				'typeDeclaration.parameter',
+				'Require Parameter Types',
+				'Requires explicit parameter types.',
+			),
+			new CheckboxItem(
+				'typeDeclaration.return',
+				'Require Return Types',
+				'Requires explicit return types.',
+			),
 		];
 	}
 
 	/**
 	 * @param list<string> $selected
 	 */
-	private function list(array $selected = [], ?BufferedOutput $output = null): CheckboxList
-	{
+	private function list(
+		array $selected = [],
+		?BufferedOutput $output = null,
+		int $width = 80,
+	): CheckboxList {
 		return new CheckboxList(
 			$this->items(),
 			$selected,
 			$output ?? new BufferedOutput(),
+			$width,
 		);
 	}
 
@@ -126,7 +143,7 @@ final class CheckboxListTest extends TestCase
 		$this->assertTrue($other->isAborted());
 	}
 
-	public function testRenderShowsIndicatorsAndCursor(): void
+	public function testRenderShowsNameIdentifierAndDescription(): void
 	{
 		$output = new BufferedOutput();
 		$list = $this->list(['phpdoc.method'], $output);
@@ -135,10 +152,53 @@ final class CheckboxListTest extends TestCase
 
 		$display = $output->fetch();
 
-		$this->assertStringContainsString('> [x] phpdoc.method', $display);
 		$this->assertStringContainsString(
-			'[ ] typeDeclaration.parameter',
+			'> [x] Require Method PHPDoc (phpdoc.method)',
 			$display,
 		);
+		$this->assertStringContainsString(
+			'Requires PHPDoc documentation for methods.',
+			$display,
+		);
+		$this->assertStringContainsString(
+			'[ ] Require Parameter Types (typeDeclaration.parameter)',
+			$display,
+		);
+	}
+
+	public function testRenderWrapsContentToTheAvailableWidth(): void
+	{
+		$output = new BufferedOutput();
+		$list = new CheckboxList(
+			[
+				new CheckboxItem(
+					'typeSafety.disallowMixed',
+					'Disallow Mixed Types',
+					'Flags the use of mixed types to encourage more specific types and stronger static analysis.',
+				),
+			],
+			[],
+			$output,
+			40,
+		);
+
+		$list->render(initial: true);
+
+		$plain = preg_replace(
+			'/\x1b\[[0-9;?]*[A-Za-z]/',
+			'',
+			$output->fetch(),
+		) ?? '';
+
+		foreach (explode("\n", $plain) as $line) {
+			$this->assertLessThanOrEqual(
+				40,
+				\strlen($line),
+				sprintf('Line exceeds the terminal width: "%s"', $line),
+			);
+		}
+
+		$this->assertStringContainsString('Disallow Mixed Types', $plain);
+		$this->assertStringContainsString('(typeSafety.disallowMixed)', $plain);
 	}
 }

@@ -144,4 +144,61 @@ final class RuleRegistryTest extends TestCase
 			$registry->getUnknownRules(array_keys($registry->all())),
 		);
 	}
+
+	public function testMetadataCoversEveryRegisteredRule(): void
+	{
+		$registry = new RuleRegistry();
+
+		$this->assertSame(
+			array_keys($registry->all()),
+			array_keys($registry->getMetadata()),
+		);
+	}
+
+	public function testMetadataExposesHumanReadableNamesAndDescriptions(): void
+	{
+		$metadata = (new RuleRegistry())->getMetadata();
+
+		$this->assertSame('Require Method PHPDoc', $metadata['phpdoc.method']->name);
+		$this->assertStringContainsString(
+			'PHPDoc documentation for methods',
+			$metadata['phpdoc.method']->description,
+		);
+
+		$this->assertSame(
+			'Require Parameter Types',
+			$metadata['typeDeclaration.parameter']->name,
+		);
+		$this->assertStringContainsString(
+			'parameters',
+			$metadata['typeDeclaration.parameter']->description,
+		);
+
+		$this->assertSame(
+			'Require Return Types',
+			$metadata['typeDeclaration.return']->name,
+		);
+		$this->assertStringContainsString(
+			'return types',
+			$metadata['typeDeclaration.return']->description,
+		);
+
+		$this->assertSame(
+			'Disallow Mixed Types',
+			$metadata['typeSafety.disallowMixed']->name,
+		);
+		$this->assertStringContainsString(
+			'mixed',
+			$metadata['typeSafety.disallowMixed']->description,
+		);
+	}
+
+	public function testEveryRuleIdentifierHasANonEmptyNameAndDescription(): void
+	{
+		foreach ((new RuleRegistry())->getMetadata() as $identifier => $metadata) {
+			$this->assertSame($identifier, $metadata->identifier);
+			$this->assertNotSame('', $metadata->name, $identifier);
+			$this->assertNotSame('', $metadata->description, $identifier);
+		}
+	}
 }

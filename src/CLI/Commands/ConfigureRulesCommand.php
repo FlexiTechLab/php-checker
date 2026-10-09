@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace PhpChecker\CLI\Commands;
 
+use PhpChecker\CLI\Prompt\CheckboxItem;
 use PhpChecker\CLI\Prompt\CheckboxPrompt;
 use PhpChecker\CLI\Prompt\SttyTerminalMode;
 use PhpChecker\CLI\Prompt\StreamKeyReader;
 use PhpChecker\Config\ConfigLoader;
 use PhpChecker\Rules\RuleRegistry;
 use PhpChecker\Support\ProjectRootResolver;
+use PhpChecker\Support\TextWrapper;
 use RuntimeException;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
@@ -19,6 +21,7 @@ use Symfony\Component\Console\Input\StreamableInputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Question\ChoiceQuestion;
 use Symfony\Component\Console\Style\SymfonyStyle;
+use Symfony\Component\Console\Terminal;
 
 #[AsCommand(
 	name: 'rules:configure',
@@ -40,9 +43,9 @@ final class ConfigureRulesCommand extends Command
 
 		try {
 			$projectRoot = $this->projectRootResolver->resolve();
-			$allRules = $this->ruleRegistry->all();
+			$metadata = $this->ruleRegistry->getMetadata();
 
-			if ($allRules === []) {
+			if ($metadata === []) {
 				$io->warning('No rules are registered.');
 
 				return Command::SUCCESS;
@@ -51,8 +54,16 @@ final class ConfigureRulesCommand extends Command
 			/** @var array<string, string> $choices */
 			$choices = [];
 
-			foreach (array_keys($allRules) as $identifier) {
+			/** @var list<CheckboxItem> $items */
+			$items = [];
+
+			foreach ($metadata as $identifier => $ruleMetadata) {
 				$choices[$identifier] = $identifier;
+				$items[] = new CheckboxItem(
+					$identifier,
+					$ruleMetadata->name,
+					$ruleMetadata->description,
+				);
 			}
 
 			// Keep only identifiers that are still registered, so the
@@ -68,6 +79,7 @@ final class ConfigureRulesCommand extends Command
 				$input,
 				$output,
 				$io,
+				$items,
 				$choices,
 				$defaults,
 			);
@@ -104,6 +116,7 @@ final class ConfigureRulesCommand extends Command
 	 * Uses the native checkbox selector when the terminal supports it and
 	 * falls back to the comma-separated question otherwise.
 	 *
+	 * @param list<CheckboxItem>    $items
 	 * @param array<string, string> $choices
 	 * @param list<string>          $defaults
 	 *
@@ -113,6 +126,7 @@ final class ConfigureRulesCommand extends Command
 		InputInterface $input,
 		OutputInterface $output,
 		SymfonyStyle $io,
+		array $items,
 		array $choices,
 		array $defaults,
 	): ?array {
@@ -124,20 +138,19 @@ final class ConfigureRulesCommand extends Command
 		) {
 			$io->text([
 				'Select the rules to enable.',
-				'Use the arrow keys to move, space to toggle a rule,',
-				'"a" to toggle all, and enter to save.',
-				'Press "q" to cancel without saving.',
+				'Use ↑/↓ to navigate, Space to toggle, "a" to toggle all,',
+				'Enter to save, or "q" to cancel without saving.',
 			]);
 
 			return (new CheckboxPrompt(new SttyTerminalMode()))->ask(
 				$output,
 				new StreamKeyReader($stream),
-				$choices,
+				$items,
 				$defaults,
 			);
 		}
 
-		return $this->askChoiceQuestion($io, $choices, $defaults);
+		return $this->askChoiceQuestion($io, $items, $choices, $defaults);
 	}
 
 	/**
@@ -176,13 +189,18 @@ final class ConfigureRulesCommand extends Command
 	}
 
 	/**
+	 * @param list<CheckboxItem>    $items
 	 * @param array<string, string> $choices
 	 * @param list<string>          $defaults
 	 *
 	 * @return list<string>
 	 */
-	private function askChoiceQuestion(SymfonyStyle $io, array $choices, array $defaults): array
-	{
+	private function askChoiceQuestion(
+		SymfonyStyle $io,
+		array $items,
+		array $choices,
+		array $defaults,
+	): array {
 		$io->text([
 			'Select the rules to enable.',
 			'Enter multiple choices separated by commas.',
@@ -192,6 +210,8 @@ final class ConfigureRulesCommand extends Command
 			),
 			'Enter "none" to disable all rules.',
 		]);
+
+		$this->describeRules($io, $items);
 
 		$question = new ChoiceQuestion(
 			'Enabled rules',
@@ -246,6 +266,25 @@ final class ConfigureRulesCommand extends Command
 
 		/** @var list<string> $selected */
 		return array_values(array_unique($selected));
+	}
+
+	/**
+	 * Lists the rules with their human-readable names and descriptions so the
+	 * comma-separated fallback is as approachable as the interactive list.
+	 *
+	 * @param list<CheckboxItem> $items
+	 */
+	private function describeRules(SymfonyStyle $io, array $items): void
+	{
+		$width = max(1, (new Terminal())->getWidth() - 6);
+
+		foreach ($items as $item) {
+			$io->text(sprintf('  - %s (%s)', $item->name, $item->identifier));
+
+			foreach (TextWrapper::wrap($item->description, $width) as $line) {
+				$io->text('      ' . $line);
+			}
+		}
 	}
 
 	/**

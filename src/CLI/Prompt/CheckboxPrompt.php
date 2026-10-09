@@ -17,8 +17,8 @@ final class CheckboxPrompt
 	) {}
 
 	/**
-	 * @param array<string, string> $items    Identifier => label.
-	 * @param list<string>          $selected Identifiers selected by default.
+	 * @param list<CheckboxItem> $items
+	 * @param list<string>       $selected Identifiers selected by default.
 	 *
 	 * @return list<string>|null The selected identifiers, or `null` when the
 	 *                           user aborted.
@@ -28,8 +28,9 @@ final class CheckboxPrompt
 		KeyReader $reader,
 		array $items,
 		array $selected,
+		?int $width = null,
 	): ?array {
-		$list = new CheckboxList($items, $selected, $output);
+		$list = new CheckboxList($items, $selected, $output, $width);
 
 		$this->terminalMode->enter();
 

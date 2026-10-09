@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace PhpChecker\Tests\CLI\Prompt;
 
+use PhpChecker\CLI\Prompt\CheckboxItem;
 use PhpChecker\CLI\Prompt\CheckboxPrompt;
 use PhpChecker\CLI\Prompt\Key;
 use PHPUnit\Framework\TestCase;
@@ -13,13 +14,13 @@ use Symfony\Component\Console\Output\BufferedOutput;
 final class CheckboxPromptTest extends TestCase
 {
 	/**
-	 * @return array<string, string>
+	 * @return list<CheckboxItem>
 	 */
 	private function items(): array
 	{
 		return [
-			'phpdoc.method' => 'phpdoc.method',
-			'typeDeclaration.parameter' => 'typeDeclaration.parameter',
+			new CheckboxItem('phpdoc.method', 'Require Method PHPDoc', 'Docs.'),
+			new CheckboxItem('typeDeclaration.parameter', 'Require Parameter Types', 'Types.'),
 		];
 	}
 
@@ -93,6 +94,30 @@ final class CheckboxPromptTest extends TestCase
 
 		$this->assertNull($selected);
 		$this->assertSame(['entered', 'restored'], $mode->events);
+	}
+
+	public function testRendersNamesAndIdentifiers(): void
+	{
+		$output = new BufferedOutput();
+
+		(new CheckboxPrompt(new RecordingTerminalMode()))->ask(
+			$output,
+			new ScriptedKeyReader([Key::Enter]),
+			$this->items(),
+			[],
+			80,
+		);
+
+		$display = $output->fetch();
+
+		$this->assertStringContainsString(
+			'Require Method PHPDoc (phpdoc.method)',
+			$display,
+		);
+		$this->assertStringContainsString(
+			'Require Parameter Types (typeDeclaration.parameter)',
+			$display,
+		);
 	}
 
 	public function testTerminalIsRestoredWhenReaderThrows(): void
