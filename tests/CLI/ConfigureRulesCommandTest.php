@@ -158,7 +158,7 @@ final class ConfigureRulesCommandTest extends TestCase
 			$display,
 		);
 		// The interactive checklist must not be used without a TTY.
-		$this->assertStringNotContainsString('Use ↑/↓ to navigate', $display);
+		$this->assertStringNotContainsString('Type to search', $display);
 		$this->assertSame(['phpdoc.method'], $this->enabledRules());
 	}
 

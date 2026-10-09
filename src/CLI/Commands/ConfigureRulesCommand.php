@@ -138,8 +138,9 @@ final class ConfigureRulesCommand extends Command
 		) {
 			$io->text([
 				'Select the rules to enable.',
-				'Use ↑/↓ to navigate, Space to toggle, "a" to toggle all,',
-				'Enter to save, or "q" to cancel without saving.',
+				'Type to search, ↑/↓ to navigate, Space to toggle, "a" to toggle all,',
+				'Enter to save, "q" to cancel, Esc clears the search.',
+				'Tab switches focus between the list and the search box.',
 			]);
 
 			return (new CheckboxPrompt(new SttyTerminalMode()))->ask(

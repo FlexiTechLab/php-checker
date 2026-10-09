@@ -38,13 +38,13 @@ final class CheckboxPrompt
 			$list->render(initial: true);
 
 			while (true) {
-				$key = $reader->read();
+				$press = $reader->read();
 
-				if ($key === null) {
+				if ($press === null) {
 					return null;
 				}
 
-				if (! $list->handle($key)) {
+				if (! $list->handle($press)) {
 					break;
 				}
 

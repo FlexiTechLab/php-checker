@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace PhpChecker\CLI\Prompt;
 
 use PhpChecker\Support\TextWrapper;
+use Symfony\Component\Console\Formatter\OutputFormatter;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Terminal;
 
@@ -12,7 +13,9 @@ use Symfony\Component\Console\Terminal;
  * Holds the state of an interactive checkbox list and renders it.
  *
  * The class is deliberately free of any terminal handling so it can be
- * exercised in tests without a TTY.
+ * exercised in tests without a TTY. It is also the home of the search and
+ * filtering logic: the visible list is derived from the full set of items,
+ * while the selection itself is always kept across every registered rule.
  */
 final class CheckboxList
 {
@@ -28,6 +31,10 @@ final class CheckboxList
 	private array $selected = [];
 
 	private int $cursor = 0;
+
+	private string $query = '';
+
+	private bool $searching = false;
 
 	private int $renderedLines = 0;
 
@@ -62,6 +69,9 @@ final class CheckboxList
 	}
 
 	/**
+	 * Every selected rule, in registration order, regardless of the active
+	 * filter.
+	 *
 	 * @return list<string>
 	 */
 	public function getSelected(): array
@@ -84,7 +94,9 @@ final class CheckboxList
 
 	public function getCursorIdentifier(): ?string
 	{
-		return $this->identifiers[$this->cursor] ?? null;
+		$items = $this->visibleItems();
+
+		return isset($items[$this->cursor]) ? $items[$this->cursor]->identifier : null;
 	}
 
 	public function isAborted(): bool
@@ -92,9 +104,37 @@ final class CheckboxList
 		return $this->aborted;
 	}
 
+	public function getQuery(): string
+	{
+		return $this->query;
+	}
+
+	public function isSearching(): bool
+	{
+		return $this->searching;
+	}
+
+	public function getMatchCount(): int
+	{
+		return \count($this->visibleItems());
+	}
+
+	/**
+	 * Identifiers that match the active filter, in registration order.
+	 *
+	 * @return list<string>
+	 */
+	public function getVisibleIdentifiers(): array
+	{
+		return array_map(
+			static fn (CheckboxItem $item): string => $item->identifier,
+			$this->visibleItems(),
+		);
+	}
+
 	public function moveUp(): void
 	{
-		$count = \count($this->identifiers);
+		$count = $this->getMatchCount();
 
 		if ($count === 0) {
 			return;
@@ -105,7 +145,7 @@ final class CheckboxList
 
 	public function moveDown(): void
 	{
-		$count = \count($this->identifiers);
+		$count = $this->getMatchCount();
 
 		if ($count === 0) {
 			return;
@@ -125,11 +165,24 @@ final class CheckboxList
 		$this->selected[$identifier] = ! $this->selected[$identifier];
 	}
 
+	/**
+	 * Toggles every rule that is currently visible.
+	 *
+	 * With no active filter this selects or clears every rule. While a
+	 * filter is active only the matching rules change; the selection of the
+	 * hidden rules is left untouched.
+	 */
 	public function toggleAll(): void
 	{
+		$identifiers = $this->getVisibleIdentifiers();
+
+		if ($identifiers === []) {
+			return;
+		}
+
 		$selectAll = false;
 
-		foreach ($this->identifiers as $identifier) {
+		foreach ($identifiers as $identifier) {
 			if (! $this->selected[$identifier]) {
 				$selectAll = true;
 
@@ -137,29 +190,230 @@ final class CheckboxList
 			}
 		}
 
-		foreach ($this->identifiers as $identifier) {
+		foreach ($identifiers as $identifier) {
 			$this->selected[$identifier] = $selectAll;
 		}
+	}
+
+	/**
+	 * Replaces the active search query and re-applies the filter.
+	 */
+	public function filter(string $query): void
+	{
+		$this->query = $query;
+		$this->clampCursor();
+	}
+
+	public function clearQuery(): void
+	{
+		$this->query = '';
+		$this->clampCursor();
 	}
 
 	/**
 	 * Applies a key press to the list state.
 	 *
 	 * @return bool `true` when the prompt should keep running, `false` when
-	 *              the user finished (Enter) or aborted (Quit).
+	 *              the user finished (Enter) or aborted (Quit/Escape).
 	 */
-	public function handle(Key $key): bool
+	public function handle(KeyPress $press): bool
 	{
-		match ($key) {
-			Key::Up => $this->moveUp(),
-			Key::Down => $this->moveDown(),
-			Key::Space => $this->toggle(),
-			Key::ToggleAll => $this->toggleAll(),
-			Key::Enter => null,
-			Key::Quit => $this->aborted = true,
-		};
+		if ($press->key === Key::Quit) {
+			$this->aborted = true;
 
-		return ! \in_array($key, [Key::Enter, Key::Quit], true);
+			return false;
+		}
+
+		if ($press->key === Key::Enter) {
+			return false;
+		}
+
+		if ($this->searching) {
+			return $this->handleSearchInput($press);
+		}
+
+		return $this->handleBrowseInput($press);
+	}
+
+	private function handleSearchInput(KeyPress $press): bool
+	{
+		switch ($press->key) {
+			case Key::Up:
+				$this->moveUp();
+
+				return true;
+
+			case Key::Down:
+				$this->moveDown();
+
+				return true;
+
+			case Key::Backspace:
+				$this->deleteQueryCharacter();
+
+				return true;
+
+			case Key::Tab:
+				// Leave the search box but keep the filter active.
+				$this->searching = false;
+
+				return true;
+
+			case Key::Escape:
+				return $this->clearOrCancel();
+
+			case Key::Character:
+				$this->appendToQuery($press->character);
+
+				return true;
+
+			default:
+				return true;
+		}
+	}
+
+	private function handleBrowseInput(KeyPress $press): bool
+	{
+		switch ($press->key) {
+			case Key::Up:
+				$this->moveUp();
+
+				return true;
+
+			case Key::Down:
+				$this->moveDown();
+
+				return true;
+
+			case Key::Backspace:
+				$this->deleteQueryCharacter();
+
+				return true;
+
+			case Key::Tab:
+				$this->searching = true;
+
+				return true;
+
+			case Key::Escape:
+				return $this->clearOrCancel();
+
+			case Key::Character:
+				return $this->handleBrowseCharacter($press->character);
+
+			default:
+				return true;
+		}
+	}
+
+	private function handleBrowseCharacter(string $character): bool
+	{
+		switch ($character) {
+			case ' ':
+				$this->toggle();
+
+				return true;
+
+			case 'a':
+			case 'A':
+				$this->toggleAll();
+
+				return true;
+
+			case 'q':
+			case 'Q':
+				$this->aborted = true;
+
+				return false;
+
+			case '/':
+				$this->searching = true;
+
+				return true;
+
+			case 'j':
+				$this->moveDown();
+
+				return true;
+
+			case 'k':
+				$this->moveUp();
+
+				return true;
+
+			default:
+				// Any other printable character starts a search with that
+				// character, so the user can simply begin typing.
+				$this->searching = true;
+				$this->appendToQuery($character);
+
+				return true;
+		}
+	}
+
+	/**
+	 * Clears the filter when there is one, otherwise cancels the prompt.
+	 */
+	private function clearOrCancel(): bool
+	{
+		if ($this->query !== '') {
+			$this->clearQuery();
+
+			return true;
+		}
+
+		$this->aborted = true;
+
+		return false;
+	}
+
+	private function appendToQuery(string $character): void
+	{
+		if ($character === '') {
+			return;
+		}
+
+		$this->query .= $character;
+		$this->clampCursor();
+	}
+
+	private function deleteQueryCharacter(): void
+	{
+		if ($this->query === '') {
+			return;
+		}
+
+		$this->query = substr($this->query, 0, -1);
+		$this->clampCursor();
+	}
+
+	private function clampCursor(): void
+	{
+		$count = $this->getMatchCount();
+
+		if ($count === 0) {
+			$this->cursor = 0;
+
+			return;
+		}
+
+		if ($this->cursor >= $count) {
+			$this->cursor = $count - 1;
+		}
+
+		if ($this->cursor < 0) {
+			$this->cursor = 0;
+		}
+	}
+
+	/**
+	 * The items matching the current filter, in registration order.
+	 *
+	 * @return list<CheckboxItem>
+	 */
+	private function visibleItems(): array
+	{
+		return CheckboxItemFilter::filter($this->items, $this->query);
 	}
 
 	/**
@@ -169,6 +423,7 @@ final class CheckboxList
 	public function render(bool $initial = false): void
 	{
 		$lines = $this->lines();
+		$count = \count($lines);
 
 		if (! $initial && $this->renderedLines > 0) {
 			$this->output->write(sprintf("\x1b[%dA", $this->renderedLines));
@@ -179,7 +434,20 @@ final class CheckboxList
 			$this->output->writeln($line);
 		}
 
-		$this->renderedLines = \count($lines);
+		// Clear any rows left over from a taller previous frame so a
+		// shrinking result set never leaves stale rules on screen.
+		if ($count < $this->renderedLines) {
+			$extra = $this->renderedLines - $count;
+
+			for ($index = 0; $index < $extra; $index++) {
+				$this->output->write("\x1b[2K");
+				$this->output->writeln('');
+			}
+
+			$this->output->write(sprintf("\x1b[%dA", $extra));
+		}
+
+		$this->renderedLines = $count;
 	}
 
 	/**
@@ -187,9 +455,34 @@ final class CheckboxList
 	 */
 	private function lines(): array
 	{
+		$total = \count($this->items);
+		$matching = $this->visibleItems();
+		$matchCount = \count($matching);
+		$query = OutputFormatter::escape($this->query);
+
 		$lines = [];
 
-		foreach ($this->items as $index => $item) {
+		$lines[] = $this->searching
+			? sprintf('Search (typing): <info>%s</info>', $query)
+			: sprintf('Search: %s', $query);
+
+		if ($this->query === '') {
+			$lines[] = sprintf('%d rule(s).', $total);
+		} elseif ($matchCount === 0) {
+			$lines[] = sprintf('No rules match "%s".', $query);
+		} else {
+			$lines[] = sprintf('%d of %d rule(s) match.', $matchCount, $total);
+		}
+
+		$lines[] = '';
+
+		if ($matchCount === 0) {
+			$lines[] = '  (no matching rules)';
+
+			return $lines;
+		}
+
+		foreach ($matching as $index => $item) {
 			if ($index > 0) {
 				$lines[] = '';
 			}

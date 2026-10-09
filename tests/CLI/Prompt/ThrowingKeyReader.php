@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace PhpChecker\Tests\CLI\Prompt;
 
-use PhpChecker\CLI\Prompt\Key;
+use PhpChecker\CLI\Prompt\KeyPress;
 use PhpChecker\CLI\Prompt\KeyReader;
 use RuntimeException;
 
@@ -14,7 +14,7 @@ use RuntimeException;
  */
 final class ThrowingKeyReader implements KeyReader
 {
-	public function read(): ?Key
+	public function read(): ?KeyPress
 	{
 		throw new RuntimeException('read failed');
 	}

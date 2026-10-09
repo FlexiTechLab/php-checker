@@ -176,19 +176,43 @@ registered rule. Each entry shows a human-readable name, a short description
 of what the rule checks, and the stable identifier in parentheses:
 
 ```text
-> [x] Require Method PHPDoc (phpdoc.method)
-      Requires PHPDoc documentation for methods to improve code readability and
-      document intent.
+Search: ret
+1 of 4 rule(s) match.
 
-  [ ] Disallow Mixed Types (typeSafety.disallowMixed)
-      Flags the use of `mixed` types to encourage more specific types and
-      stronger static analysis.
+> [ ] Require Return Types (typeDeclaration.return)
+      Requires explicit return types for methods and functions to make expected
+      results clear and prevent type-related errors.
 ```
 
-Use the arrow keys (or `k`/`j`) to move, space to toggle the highlighted rule,
-`a` to toggle all rules, and enter to save. Press `q` or Escape to cancel
-without changing anything. Rules that are already enabled are shown
-pre-selected. Long names and descriptions wrap to the terminal width.
+A search box sits above the list. Start typing to filter the rules; matching
+is case-insensitive and checks the name, the identifier and the description.
+The number of matching rules is shown, and a clear message is displayed when
+nothing matches.
+
+| Key | Action |
+| --- | ------ |
+| Type | Filter the rules by the typed text |
+| `/` or `Tab` | Focus the search box |
+| `Tab` | Move focus back to the list (the filter is kept) |
+| `↑` / `↓` (or `k`/`j`) | Move the highlight |
+| `Space` | Toggle the highlighted rule |
+| `a` | Toggle all *visible* rules; hidden selections are preserved |
+| `Backspace` | Delete the last search character |
+| `Esc` | Clear the search; when it is already empty, cancel |
+| `Enter` | Save |
+| `q`, `Ctrl-C`, `Ctrl-D` | Cancel without saving |
+
+When the list has focus the single-key shortcuts above apply, and typing any
+other printable character starts a search. Once the search box has focus every
+printable character (including `Space`, `a` and `q`) is entered as text, so
+typing never toggles a rule or triggers a shortcut; use `/` or `Tab` first when
+a search term begins with one of the reserved keys. Long names and descriptions
+wrap to the terminal width.
+
+Selection state is independent of the active filter: filtering never deselects
+a hidden rule, and saving persists the complete selection across every
+registered rule, not only the visible matches. Rules that are already enabled
+are shown pre-selected, and an empty selection is valid.
 
 When the terminal does not support interactive input (for example when the
 command runs from a script, with `--no-interaction`, or on a platform without
