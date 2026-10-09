@@ -19,6 +19,9 @@ final class RuleRegistry
 		];
 	}
 
+	/**
+	 * @return array<string, class-string>
+	 */
 	public function getEnabledRules(CheckerConfig $config): array
 	{
 		$rules = [];

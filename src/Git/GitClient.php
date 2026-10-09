@@ -106,6 +106,31 @@ final class GitClient
 		return $diff;
 	}
 
+	public function getFileDiff(string $repositoryRoot, string $file): string
+	{
+		$process = new Process(
+			[
+				'git',
+				'diff',
+				'--no-ext-diff',
+				'--no-color',
+				'--unified=3',
+				'HEAD',
+				'--',
+				$file,
+			],
+			$repositoryRoot,
+		);
+
+		$process->run();
+
+		if (!$process->isSuccessful()) {
+			return '';
+		}
+
+		return $process->getOutput();
+	}
+
 	/**
 	 * @param list<string> $arguments
 	 */

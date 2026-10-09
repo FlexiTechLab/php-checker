@@ -14,7 +14,11 @@ final class ConsoleReporter implements Reporter
 		private ?OutputInterface $output = null,
 	) {}
 
-	public function report(array $violations, ?OutputInterface $output = null): int
+	/**
+	 * @param list<Violation> $violations
+	 * @param array<string, string> $fileDiffs
+	 */
+	public function report(array $violations, ?OutputInterface $output = null, array $fileDiffs = [], ?string $projectRoot = null): int
 	{
 		$finalOutput = $output
 			?? $this->output
@@ -47,9 +51,11 @@ final class ConsoleReporter implements Reporter
 				)
 				: '';
 
+			$file = $this->relativePath($violation->file, $projectRoot);
+
 			$finalOutput->writeln(sprintf(
 				'  <fg=cyan>%s:%d</>',
-				$violation->file,
+				$file,
 				$violation->line,
 			));
 
@@ -59,9 +65,71 @@ final class ConsoleReporter implements Reporter
 				$violation->message,
 			));
 
+			$fileDiff = $fileDiffs[$violation->file] ?? '';
+
+			if ($fileDiff !== '') {
+				$this->writeDiff($finalOutput, $fileDiff);
+			}
+
 			$finalOutput->writeln('');
 		}
 
 		return Command::FAILURE;
+	}
+
+	private function writeDiff(OutputInterface $output, string $diff): void
+	{
+		if ($diff === '') {
+			return;
+		}
+
+		$output->writeln(
+			'<comment>-------- begin diff --------</comment>',
+		);
+
+		foreach (explode("\n", rtrim($diff, "\n")) as $line) {
+			if (str_starts_with($line, '+') && !str_starts_with($line, '+++')) {
+				$output->writeln('<fg=green>' . $line . '</>');
+			} elseif (str_starts_with($line, '-') && !str_starts_with($line, '---')) {
+				$output->writeln('<fg=red>' . $line . '</>');
+			} else {
+				$output->writeln($line);
+			}
+		}
+
+		$output->writeln(
+			'<comment>--------- end diff ---------</comment>',
+		);
+	}
+
+	private function relativePath(string $file, ?string $projectRoot): string
+	{
+		if ($projectRoot === null || $projectRoot === '') {
+			return $file;
+		}
+
+		$root = realpath($projectRoot);
+
+		if ($root === false) {
+			return $file;
+		}
+
+		$root = rtrim(str_replace('\\', '/', $root), '/');
+		$file = str_replace('\\', '/', $file);
+
+		if (
+			!str_starts_with($file, '/')
+			&& preg_match('/^[A-Za-z]:\//', $file) !== 1
+		) {
+			$file = $root . '/' . ltrim($file, '/');
+		}
+
+		$prefix = $root . '/';
+
+		if (str_starts_with($file, $prefix)) {
+			return substr($file, strlen($prefix));
+		}
+
+		return $file;
 	}
 }

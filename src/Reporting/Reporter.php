@@ -10,6 +10,7 @@ interface Reporter
 {
 	/**
 	 * @param list<Violation> $violations
+	 * @param array<string, string> $fileDiffs
 	 */
-	public function report(array $violations, OutputInterface $output): int;
+	public function report(array $violations, OutputInterface $output, array $fileDiffs = [], ?string $projectRoot = null): int;
 }

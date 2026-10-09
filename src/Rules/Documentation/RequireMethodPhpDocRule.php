@@ -30,11 +30,11 @@ final class RequireMethodPhpDocRule implements Rule
 
 		return [
 			RuleErrorBuilder::message(
-				sprintf(
-					'Method %s() must have PHPDoc.',
-					$methodName
-				)
-			)->line($node->getStartLine())->build(),
+				sprintf('Method %s() must have PHPDoc.', $methodName)
+			)
+				->identifier('phpdoc.method')
+				->line($node->getStartLine())
+				->build()
 		];
 	}
 }

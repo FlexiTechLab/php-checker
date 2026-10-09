@@ -45,6 +45,13 @@ final class CheckCommand extends Command
 			InputOption::VALUE_NONE,
 			'Only report violations on added or modified lines.',
 		);
+
+		$this->addOption(
+			'show-diff',
+			null,
+			InputOption::VALUE_NONE,
+			'Display Git patch output in the terminal.',
+		);
 	}
 
 	protected function execute(InputInterface $input, OutputInterface $output): int
@@ -55,14 +62,45 @@ final class CheckCommand extends Command
 			->path($path)
 			->run();
 
-		if ($input->getOption('diff')) {
-			$repositoryRoot = $this->gitClient->getRepositoryRoot(getcwd() ?: '.');
+		$showDiff = (bool) $input->getOption('show-diff');
+		$filterDiff = (bool) $input->getOption('diff');
+
+		$repositoryRoot = null;
+		$diff = null;
+
+		if ($filterDiff || $showDiff) {
+			$repositoryRoot = $this->gitClient->getRepositoryRoot(
+				getcwd() ?: '.',
+			);
 
 			$diff = $this->gitClient->getDiff($repositoryRoot);
 
-			$violations = $this->diffMatcher->filter($violations, $diff, $repositoryRoot);
+			if ($filterDiff) {
+				$violations = $this->diffMatcher->filter(
+					$violations,
+					$diff,
+					$repositoryRoot,
+				);
+			}
 		}
 
-		return $this->reporter->report($violations, $output);
+		$fileDiffs = [];
+
+		if ($showDiff) {
+			foreach ($violations as $violation) {
+				$file = $violation->file;
+
+				if (isset($fileDiffs[$file])) {
+					continue;
+				}
+
+				$fileDiffs[$file] = $this->gitClient->getFileDiff(
+					$repositoryRoot,
+					$file,
+				);
+			}
+		}
+
+		return $this->reporter->report($violations, $output, $fileDiffs, $repositoryRoot ?? (getcwd() ?: '.'));
 	}
 }
