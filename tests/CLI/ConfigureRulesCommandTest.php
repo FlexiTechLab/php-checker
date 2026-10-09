@@ -142,4 +142,37 @@ final class ConfigureRulesCommandTest extends TestCase
 			$tester->getDisplay(),
 		);
 	}
+
+	public function testNonTtyInputFallsBackToCommaSeparatedPrompt(): void
+	{
+		$tester = new CommandTester($this->createCommand());
+		$tester->setInputs(['phpdoc.method']);
+
+		$status = $tester->execute([], ['interactive' => true]);
+
+		$display = $tester->getDisplay();
+
+		$this->assertSame(Command::SUCCESS, $status);
+		$this->assertStringContainsString(
+			'Enter multiple choices separated by commas.',
+			$display,
+		);
+		$this->assertStringNotContainsString(
+			'Use the arrow keys to move',
+			$display,
+		);
+		$this->assertSame(['phpdoc.method'], $this->enabledRules());
+	}
+
+	public function testNonInteractiveEnvironmentKeepsCurrentSelection(): void
+	{
+		$this->configLoader->save($this->projectRoot, ['phpdoc.method']);
+
+		$tester = new CommandTester($this->createCommand());
+
+		$status = $tester->execute([], ['interactive' => false]);
+
+		$this->assertSame(Command::SUCCESS, $status);
+		$this->assertSame(['phpdoc.method'], $this->enabledRules());
+	}
 }

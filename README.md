@@ -171,9 +171,19 @@ Run `rules:configure` to choose which rules the `check` command runs:
 vendor/bin/php-checker rules:configure
 ```
 
-The command lets you select multiple rules, separated by commas. Pressing
-enter keeps the previously selected rules, and entering `none` disables every
-rule. The selection is saved to `php-checker.json` at the project root:
+On a real terminal the command shows an interactive checklist of every
+registered rule. Use the arrow keys (or `k`/`j`) to move, space to toggle the
+highlighted rule, `a` to toggle all rules, and enter to save. Press `q` or
+Escape to cancel without changing anything. Rules that are already enabled are
+shown pre-selected.
+
+When the terminal does not support interactive input (for example when the
+command runs from a script, with `--no-interaction`, or on a platform without
+`stty`), the command falls back to entering multiple rule identifiers
+separated by commas. Pressing enter keeps the previously selected rules, and
+entering `none` disables every rule.
+
+The selection is saved to `php-checker.json` at the project root:
 
 ```json
 {
